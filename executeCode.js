@@ -1,5 +1,3 @@
-// executeCode.js
-
 const { spawn } = require("child_process");
 const path = require("path");
 const os = require("os");
@@ -9,50 +7,31 @@ const { v4: uuid } = require("uuid");
 const executeCode = (language, code, input) => {
   return new Promise((resolve, reject) => {
     
-    // --- Python Handler ---
+    // Handler for Python
     if (language === "py") {
-      // FIX: Changed "python3" to "python" for better Windows compatibility.
-      const childProcess = spawn("python", ["-c", code]);
-      
-      let output = "";
-      let error = "";
-
-      childProcess.on('error', (err) => {
-          // This catches the error if 'python' command is not found at all.
-          return reject({ error: "Python command not found. Make sure Python is installed and added to your system's PATH." });
-      });
-
+      const childProcess = spawn("python3", ["-c", code]);
+      let output = "", error = "";
       childProcess.stdout.on("data", (data) => (output += data.toString()));
       childProcess.stderr.on("data", (data) => (error += data.toString()));
-      childProcess.on("close", (code) => {
-        if (code !== 0) return reject({ error });
-        resolve(output);
-      });
-
+      childProcess.on("close", (code) => code !== 0 ? reject({ error }) : resolve(output));
       childProcess.stdin.write(input);
       childProcess.stdin.end();
 
-    // --- C++ and C Handler ---
+    // Handler for C++ and C
     } else if (language === "cpp" || language === "c") {
       const compiler = language === "cpp" ? "g++" : "gcc";
-      // FIX: Added langIdentifier to use "c++" for g++ instead of "cpp".
       const langIdentifier = language === "cpp" ? "c++" : "c";
-      const executableName = `${uuid()}${os.platform() === "win32" ? ".exe" : ""}`;
+      const executableName = uuid();
       const executablePath = path.join(os.tmpdir(), executableName);
 
       const compile = spawn(compiler, ["-x", langIdentifier, "-o", executablePath, "-"]);
-      
       let compileError = "";
       compile.stderr.on("data", (data) => (compileError += data.toString()));
       compile.on("close", (code) => {
-        if (code !== 0) {
-          return reject({ error: compileError || "Compilation failed" });
-        }
+        if (code !== 0) return reject({ error: compileError || "Compilation failed" });
         
         const run = spawn(executablePath);
-        let output = "";
-        let runError = "";
-
+        let output = "", runError = "";
         run.stdout.on("data", (data) => (output += data.toString()));
         run.stderr.on("data", (data) => (runError += data.toString()));
         run.on("close", async (code) => {
@@ -60,15 +39,13 @@ const executeCode = (language, code, input) => {
           if (code !== 0) return reject({ error: runError });
           resolve(output);
         });
-        
         run.stdin.write(input);
         run.stdin.end();
       });
-      
       compile.stdin.write(code);
       compile.stdin.end();
 
-    // --- Java Handler ---
+    // Handler for Java
     } else if (language === "java") {
         const className = "Main";
         const tempDir = path.join(os.tmpdir(), uuid());
@@ -82,7 +59,6 @@ const executeCode = (language, code, input) => {
                 const compile = spawn("javac", [filePath]);
                 let compileError = "";
                 compile.stderr.on("data", (data) => (compileError += data.toString()));
-                
                 compile.on("close", (code) => {
                     if (code !== 0) {
                         fs.rm(tempDir, { recursive: true, force: true });
@@ -90,9 +66,7 @@ const executeCode = (language, code, input) => {
                     }
 
                     const run = spawn("java", ["-cp", tempDir, className]);
-                    let output = "";
-                    let runError = "";
-
+                    let output = "", runError = "";
                     run.stdout.on("data", (data) => (output += data.toString()));
                     run.stderr.on("data", (data) => (runError += data.toString()));
                     run.on("close", async (code) => {
@@ -100,20 +74,16 @@ const executeCode = (language, code, input) => {
                         if (code !== 0) return reject({ error: runError });
                         resolve(output);
                     });
-
                     run.stdin.write(input);
                     run.stdin.end();
                 });
-
             } catch (e) {
-                if (tempDir) {
-                    await fs.rm(tempDir, { recursive: true, force: true }).catch(err => console.error("Cleanup failed:", err));
-                }
+                if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(err => console.error("Cleanup failed:", err));
                 reject({ error: e.message });
             }
         })();
     } else {
-        return reject({ error: "Unsupported language" });
+        reject({ error: "Unsupported language" });
     }
   });
 };
